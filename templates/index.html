@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>블로그 포스터</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>네이버 블로그 포스터</h1>
+    <p class="schedule-info">자동 발행: 매일 {{ schedule_time }}</p>
+
+    <button class="btn-test" onclick="testLogin()">로그인 테스트</button>
+
+    <form id="postForm" class="card">
+        <label for="title">제목</label>
+        <input type="text" id="title" name="title" placeholder="글 제목을 입력하세요" required>
+
+        <label for="category">카테고리</label>
+        <input type="text" id="category" name="category" placeholder="카테고리명 (블로그에 등록된 이름)">
+
+        <label for="tags">태그</label>
+        <input type="text" id="tags" name="tags" placeholder="태그1, 태그2, 태그3 (쉼표 구분)">
+
+        <label for="content">본문</label>
+        <textarea id="content" name="content" placeholder="본문 내용을 입력하세요" required></textarea>
+
+        <label>사진</label>
+        <input type="file" id="images" accept="image/*" multiple>
+        <div id="imagePreview" class="image-preview"></div>
+
+        <div class="btn-group">
+            <button type="button" class="btn btn-primary" onclick="submitPost('publish')">즉시 발행</button>
+            <button type="button" class="btn btn-secondary" onclick="submitPost('queue')">예약 큐 추가</button>
+        </div>
+    </form>
+
+    <!-- 예약 대기 글 -->
+    {% if queued %}
+    <div class="card">
+        <h2>예약 대기 ({{ queued|length }}건)</h2>
+        {% for post in queued %}
+        <div class="queue-item">
+            <div>
+                <div class="queue-title">{{ post.title }}</div>
+                <div class="queue-date">{{ post.created_at.strftime('%m/%d %H:%M') }}</div>
+            </div>
+            <button class="btn-danger" onclick="deletePost({{ post.id }})">삭제</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- 발행 완료 -->
+    {% if published %}
+    <div class="card">
+        <h2>발행 완료</h2>
+        {% for post in published %}
+        <div class="published-item">
+            {{ post.published_at.strftime('%m/%d') }} - {{ post.title }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // 이미지 미리보기
+        document.getElementById('images').addEventListener('change', function(e) {
+            const preview = document.getElementById('imagePreview');
+            preview.innerHTML = '';
+            Array.from(e.target.files).forEach(file => {
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                preview.appendChild(img);
+            });
+        });
+
+        function showToast(msg, duration = 3000) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.style.display = 'block';
+            setTimeout(() => toast.style.display = 'none', duration);
+        }
+
+        async function submitPost(action) {
+            const form = document.getElementById('postForm');
+            const title = document.getElementById('title').value.trim();
+            const content = document.getElementById('content').value.trim();
+
+            if (!title || !content) {
+                showToast('제목과 본문을 입력하세요');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('content', content);
+            formData.append('category', document.getElementById('category').value.trim());
+            formData.append('tags', document.getElementById('tags').value.trim());
+            formData.append('action', action);
+
+            const files = document.getElementById('images').files;
+            for (const file of files) {
+                formData.append('images', file);
+            }
+
+            form.classList.add('loading');
+            showToast(action === 'publish' ? '발행 중...' : '저장 중...', 30000);
+
+            try {
+                const res = await fetch('/api/post', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (data.status === 'ok') {
+                    showToast(data.message);
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showToast('오류: ' + data.message, 5000);
+                }
+            } catch (e) {
+                showToast('네트워크 오류', 5000);
+            } finally {
+                form.classList.remove('loading');
+            }
+        }
+
+        async function deletePost(id) {
+            if (!confirm('삭제할까요?')) return;
+            await fetch('/api/queue/' + id, { method: 'DELETE' });
+            location.reload();
+        }
+
+        async function testLogin() {
+            showToast('로그인 테스트 중...', 30000);
+            try {
+                const res = await fetch('/api/login-test', { method: 'POST' });
+                const data = await res.json();
+                showToast(data.message, 3000);
+            } catch (e) {
+                showToast('테스트 실패', 3000);
+            }
+        }
+    </script>
+</body>
+</html>
